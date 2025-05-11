@@ -3,6 +3,7 @@
 #include <MFRC522.h>
 #include <EEPROM.h>
 #include "../EnvVariables.h"
+#include "../lib/Debugger/Debugger.h"
 #include "../lib/LedIndicator/LedIndicator.h"
 #include "../lib/PinoutsBoards/ArduinoNanoPinouts.h"  // You can choose pinouts definition for your board
 
@@ -12,7 +13,8 @@ LedIndicator ledIndicator(LED_GREEN, LED_RED);
 
 uint8_t cards_size = 0;
 const uint8_t maxCards = 16;
-bool debug = true;
+// bool debug = true;
+Debugger debugger(true);
 bool clearAllCardsInMemory = false;
 
 // struct CardsCountObject{
@@ -34,8 +36,10 @@ CardsInfoObject cards[maxCards];
 int cardsStorageAddress = sizeof(cards);
 
 void setup() {
-  if(debug) Serial.begin(9600);
-  if(debug) Serial.println("Serial iniciando");
+  debugger.init();
+  // if(debug) Serial.begin(9600);
+  debugger.logToSerial("Serial iniciando");
+  // if(debug) Serial.println("Serial iniciando");
 
   // preferences.begin(WORKSPACE_NAME, false);
 
@@ -50,10 +54,12 @@ void setup() {
   // populateCardsAndCounter();
 
   // cardsCounter =  cardsCountObj.count;//preferences.getUInt("cardsCount", 0);
-  if(debug) {
-    Serial.print("Cards count = ");
-    Serial.println(cards_size);
-  }
+
+  debugger.logToSerial("Cards count = " + cards_size);
+  // if(debug) {
+  //   Serial.print("Cards count = ");
+  //   Serial.println(cards_size);
+  // }
 
   //  for(int i=0; i < sizeof(cardsStorageObj.value); i++) {
 
@@ -103,17 +109,20 @@ void saveMasterCardToMemory() {
 }
 
 bool saveCard(CardsInfoObject card) {
-  if(debug) Serial.println("Saving card...");
-  
+  // if(debug) Serial.println("Saving card...");
+  debugger.logToSerial("Saving card...");
+
   if(cards_size <= maxCards) {
     cards[cards_size++] = card;
     EEPROM.put(cardsStorageAddress, cards);
-    if(debug) Serial.println("Card saved!");
+    // if(debug) Serial.println("Card saved!");
+    debugger.logToSerial("Card saved!");
     
     return true;
   }
 
-  if(debug) Serial.println("Card not saved!");
+  // if(debug) Serial.println("Card not saved!");
+  debugger.logToSerial("Card not saved!");
   return false;
   // EEPROM.put(cardsCountAddress, (cardsCounter+1));
 }
@@ -129,26 +138,19 @@ void removeCardFromArray(int index) {
 }
 
 void logCards() {
-  if(debug) {
-    Serial.println("Cards AFTER removing");
-    for(CardsInfoObject card : cards) {
-      Serial.println(card.cardID);
-    }
+  debugger.logToSerial("Cards AFTER removing");
+  for(CardsInfoObject card : cards) {
+    debugger.logToSerial(card.cardID);
   }
 }
 
 void logMasterCardSave(bool isCardSaved) {
-  if(debug) {
-    if (isCardSaved) {
-        Serial.println("Master card saved!");
-        Serial.print("Card counter = ");
-        Serial.println(cards_size);
-    } else {
-        Serial.println("Master card CANNOT be saved!");
-        Serial.print("Card counter = ");
-        Serial.println(cards_size);
-    }
+  if (isCardSaved) {
+    debugger.logToSerial("Master card saved! Card count = ");
+  } else {
+    debugger.logToSerial("Master card CANNOT be saved! Card count = ");
   }
+  debugger.logToSerial("" + cards_size);
 }
 
 void rfidInit() {
@@ -156,7 +158,7 @@ void rfidInit() {
   mfrc522.PCD_Init();                 // Init MFRC522
   delay(4);                           // Optional delay. Some board do need more time after init to be ready, see Readme
   mfrc522.PCD_DumpVersionToSerial();  // Show details of PCD - MFRC522 Card Reader details
-  if(debug) Serial.println("Scan PICC to see UID, SAK, type, and data blocks...");
+  debugger.logToSerial("Scan PICC to see UID, SAK, type, and data blocks...");
 }
 
 void loop() {
@@ -169,12 +171,12 @@ void loop() {
 
   if(isMasterCard(cardId)) {
     int status = processCard();
-    if(debug) Serial.print("Debugger => processCard() - status: ");
-    if(debug) Serial.println(status);
+    
+    debugger.logToSerial("Debugger => processCard() - status: " + status);
+
     addNewCardIndicator(status);
   } else {
-    if(debug) Serial.print("Debugger => loop() - Cards id: ");
-    if(debug) Serial.println(cardId);
+    debugger.logToSerial("Debugger => loop() - Cards id: " + cardId);
 
     CardsInfoObject newCard;
     newCard.cardID = cardId;
@@ -191,46 +193,44 @@ void loop() {
 
   delay(1000);
 
-  if(debug) showCardsInMemory();
+  showCardsInMemory();
 
   mfrc522.PICC_HaltA(); 
   // preferences.end();
 
-  if(debug) Serial.println("RFID sensor is ready to read a card!");
-  if(debug) Serial.flush();
+  debugger.logToSerial("RFID sensor is ready to read a card!");
+
+  if(debugger._isDebuggerEnable()) Serial.flush();
 }
 
 void addNewCardIndicator(int status) {
-  if(debug) Serial.println();
-
   if(status == 200) {
-    if(debug) Serial.println("Success: Card added!");
+    debugger.logToSerial("Success: Card added!");
     ledIndicator.indicate(ledIndicator.indicatorType.CARD_ADDED_SUCCESS);
   } else if(status == 202){
-    if(debug) Serial.println("Success: Card removed!");
+    debugger.logToSerial("Success: Card removed!");
     ledIndicator.indicate(ledIndicator.indicatorType.CARD_REMOVED);
   } else if(status == 204) {
-    if(debug) Serial.println("Failed: Card does not exist!");
+    debugger.logToSerial("Failed: Card does not exist!");
     ledIndicator.indicate(ledIndicator.indicatorType.CARD_DOES_NOT_EXIST);
   } else if(status == 409) {
-    if(debug) Serial.println("Failed: Card already exists!");
+    debugger.logToSerial("Failed: Card already exists!");
     ledIndicator.indicate(ledIndicator.indicatorType.CARD_ALREADY_EXISTS);
   } else if(status == 400) {
-    if(debug) Serial.println("Failed: Master card tapped!");
+    debugger.logToSerial("Failed: Master card tapped!");
     ledIndicator.indicate(ledIndicator.indicatorType.MASTER_CARD_NOT_PERMITTED);
   } else if(status == 500) {
-    if(debug) Serial.println("Failed: Backend side error!");
+    debugger.logToSerial("Failed: Backend side error!");
     ledIndicator.indicate(ledIndicator.indicatorType.BACKEND_ERROR);
   } else {
-    if(debug) Serial.println("Error: Cannot have status code: " + status);
+    debugger.logToSerial("Error: Cannot have status code: " + status);
   }
 }
 
 void showCardsInMemory() {
-  Serial.println("-------------------------------");
-  Serial.print("Cards in memory (Including Master Card): ");
-  Serial.println(cards_size);
-  Serial.println("-------------------------------");
+  debugger.logToSerial("-------------------------------");
+  debugger.logToSerial("Cards in memory (Including Master Card): " + cards_size);
+  debugger.logToSerial("-------------------------------");
 }
 
 bool isCardPresent() {
@@ -258,10 +258,10 @@ String cardIdRead() {
 }
 
 bool isCardAllowed(CardsInfoObject cardParam) {
-  if(debug) Serial.println("isCardAllowed -> cardID param = " + cardParam.cardID);
+  debugger.logToSerial("isCardAllowed -> cardID param = " + cardParam.cardID);
   
   for(CardsInfoObject card : cards) {
-    if(debug) Serial.println("isCardAllowed -> from cards array = " + card.cardID);
+    debugger.logToSerial("isCardAllowed -> from cards array = " + card.cardID);
 
     if(card.cardID == cardParam.cardID) { // save master card only if it not exists previously 
       return true;
@@ -280,8 +280,15 @@ bool isMasterCard(String cardId) {
   return cardId.equals(MASTER_CARD_ID);
 }
 
+void waitForCard(Indicator::type indicatorType) {
+  while(!isCardPresent()) {
+    ledIndicator.indicate(indicatorType);
+    // ledIndicator.indicate(indicator.indicatorType.WAITING_CARD);
+  }
+}
+
 int processCard() {
-  if(debug) Serial.println("Scan the new card that you want to add...");
+  debugger.logToSerial("Scan the new card that you want to add...");
   
   ledIndicator.indicate(ledIndicator.indicatorType.ENTER_NEW_CARD_CONDITION);
 
@@ -302,7 +309,7 @@ int processCard() {
 
   // add card only if the card do not already exists
   int status = addNewCard(cardId);
-  if(debug) Serial.println("processCard method -> addNewCard status = " + status);
+  debugger.logToSerial("processCard method -> addNewCard status = " + status);
 
   return status;
 }
@@ -310,18 +317,18 @@ int processCard() {
 int removeCard() {
   // int cardCount = preferences.getUInt("cardsCount");
 
-  if(debug) Serial.println("Scan the card that you want to remove...");
+  debugger.logToSerial("Scan the card that you want to remove...");
 
   waitForCard(ledIndicator.indicatorType.CARD_REMOVED);
 
   String cardId = cardIdRead();
 
-  if(debug) Serial.println("Trying to remove card ID: " + cardId);
+  debugger.logToSerial("Trying to remove card ID: " + cardId);
 
   CardsInfoObject card = getCardById(cardId);
 
   if(card.cardID.equalsIgnoreCase("") || !isCardAlreadyExists(card)) {
-    if(debug) Serial.println("Card ID: " + card.cardID + " does not exists to be removed!");
+    debugger.logToSerial("Card ID: " + card.cardID + " does not exists to be removed!");
 
     return 204;
   }
@@ -336,30 +343,20 @@ int removeCard() {
 }
 
 void removeCard(CardsInfoObject card) {
-  if(debug) Serial.println("Cards BEFORE removing");
+  debugger.logToSerial("Cards BEFORE removing");
   logCards();
 
   for(size_t i = 0; i < cards_size; i++) {
     if(cards[i].cardID == card.cardID) {
       // EEPROM.put(cardsCountAddress, (cardsCounter-1));
 
-      if(debug) {
-        Serial.println("Card to be removed");
-        Serial.println("CardId = " + card.cardID);
-      }
+      debugger.logToSerial("Card to be removed. Card id = " + card.cardID);
       
       removeCardFromArray(i);
       break;
     }
   }
   logCards();
-}
-
-void waitForCard(Indicator::type indicatorType) {
-  while(!isCardPresent()) {
-    ledIndicator.indicate(indicatorType);
-    // ledIndicator.indicate(indicator.indicatorType.WAITING_CARD);
-  }
 }
 
 int addNewCard(String cardId) {
@@ -376,12 +373,8 @@ int addNewCard(String cardId) {
   CardsInfoObject newCard;
   newCard.cardID = cardId;
 
-  if(debug) {
-    Serial.print("addNewCard - card = ");
-    Serial.println(newCard.cardID);
-    Serial.print(" isMAster = ");
-    Serial.println(String(newCard.isMaster));
-  }
+  debugger.logToSerial("addNewCard - card = " + newCard.cardID);
+  debugger.logToSerial("is card master? " + newCard.isMaster ? "Yes" : "No");
 
   bool isCardSaved = saveCard(newCard);
 
