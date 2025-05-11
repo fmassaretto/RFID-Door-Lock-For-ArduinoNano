@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # door-access-control-rfid
 
 
@@ -32,3 +33,6 @@ _At this point you have two options to add and to remove a card_
  - LED Red turn on for 800ms
  - LED Red blink on and off 100ms each time (3 times)
    
+=======
+# Door_Opener_RFID
+>>>>>>> 3f465190eeeeb83a80039502a160af160a6940f2
