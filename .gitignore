@@ -3,4 +3,9 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 .vscode/ipch
+<<<<<<< HEAD
+
+EnvVariables.h
+=======
 src/.env/**
+>>>>>>> 3f465190eeeeb83a80039502a160af160a6940f2
