@@ -17,5 +17,4 @@ void Debugger::logToSerial(String msg) {
     if(debugger_enable) {
         Serial.println(msg);
     }
-    Serial.flush();
 }
