@@ -13,59 +13,25 @@ LedIndicator ledIndicator(LED_GREEN, LED_RED);
 
 uint8_t cards_size = 0;
 const uint8_t maxCards = 16;
-// bool debug = true;
 Debugger debugger(true);
 bool clearAllCardsInMemory = false;
-
-// struct CardsCountObject{
-//   int count = 0;
-// };
 
 struct CardsInfoObject{
   String cardID;
   bool isMaster = false;
 };
 
-
-// Vector<CardsInfoObject> cards;
-
 CardsInfoObject cards[maxCards];
-
-// CardsCountObject cardsCountObj;
-// int cardsCountAddress = 0;
-int cardsStorageAddress = sizeof(cards);
+byte eeCardsAddress = 0;
 
 void setup() {
   debugger.init();
-  // if(debug) Serial.begin(9600);
   debugger.logToSerial("Serial iniciando");
-  // if(debug) Serial.println("Serial iniciando");
 
-  // preferences.begin(WORKSPACE_NAME, false);
+  // populateCardsArrayFromEEPROM();
 
-  // if(clearAllCardsInMemory) preferences.clear(); // To clear all data in memory
+  debugger.logToSerial("Cards count = " + String(cards_size));
 
-  // strcpy(cardsStorageObj.key, "cards");
-  // strcpy(cardsStorageObj.value, {});
-
-  // EEPROM.put(cardsCountAddress, cardsCountObj);
-  // EEPROM.put(cardsStorageAddress, cards);
-
-  // populateCardsAndCounter();
-
-  // cardsCounter =  cardsCountObj.count;//preferences.getUInt("cardsCount", 0);
-
-  debugger.logToSerial("Cards count = " + cards_size);
-  // if(debug) {
-  //   Serial.print("Cards count = ");
-  //   Serial.println(cards_size);
-  // }
-
-  //  for(int i=0; i < sizeof(cardsStorageObj.value); i++) {
-
-  //   Serial.print("For= ");
-  //   Serial.println(i);
-  //  }
   saveMasterCardToMemory();
 
   pinMode(LED_RED, OUTPUT);
@@ -75,13 +41,27 @@ void setup() {
   keepDoorClosed();
 
   rfidInit();
-  // preferences.end();
 }
 
-void populateCardsAndCounter() {
+void populateCardsArrayFromEEPROM() {
   // EEPROM.get(cardsCountAddress, cardsCountObj);
-  EEPROM.get(cardsStorageAddress, cards);
+  EEPROM.get(eeCardsAddress, cards);
+  // for(CardsInfoObject card : cards) {
+    
+  // }
 }
+
+void updateEEPROM(CardsInfoObject cardsObj[]) {
+  // EEPROM.write(eeCardsAddress, 0); // clear all data
+  // clearEEPROM();
+  EEPROM.put(eeCardsAddress, cardsObj);
+}
+
+// void clearEEPROM() {
+//   for (int i = 0 ; i < EEPROM.length() ; i++) {
+//     EEPROM.write(i, 0);
+//   }
+// }
 
 void saveMasterCardToMemory() {
   bool masterCardAlreadyExists = false;
@@ -102,29 +82,21 @@ void saveMasterCardToMemory() {
 
     logMasterCardSave(isCardSaved);
   }
-  // if(!preferences.isKey(MASTER_CARD_ID)){
-  //   preferences.putString(MASTER_CARD_ID, "Master Card");
-  //   preferences.putUInt("cardsCount", ++cardsCounter);
-  // }
 }
 
 bool saveCard(CardsInfoObject card) {
-  // if(debug) Serial.println("Saving card...");
   debugger.logToSerial("Saving card...");
 
   if(cards_size <= maxCards) {
     cards[cards_size++] = card;
-    EEPROM.put(cardsStorageAddress, cards);
-    // if(debug) Serial.println("Card saved!");
+    // updateEEPROM(cards);
     debugger.logToSerial("Card saved!");
     
     return true;
   }
 
-  // if(debug) Serial.println("Card not saved!");
   debugger.logToSerial("Card not saved!");
   return false;
-  // EEPROM.put(cardsCountAddress, (cardsCounter+1));
 }
 
 void removeCardFromArray(int index) {
@@ -134,23 +106,23 @@ void removeCardFromArray(int index) {
 
   cards_size--;
   
-  EEPROM.put(cardsStorageAddress, cards);
+  // updateEEPROM(cards);
 }
 
 void logCards() {
-  debugger.logToSerial("Cards AFTER removing");
   for(CardsInfoObject card : cards) {
-    debugger.logToSerial(card.cardID);
+    if(!card.cardID.equalsIgnoreCase("")) {
+      debugger.logToSerial(card.cardID);
+    }
   }
 }
 
 void logMasterCardSave(bool isCardSaved) {
   if (isCardSaved) {
-    debugger.logToSerial("Master card saved! Card count = ");
+    debugger.logToSerial("Master card saved! Card count = " + String(cards_size));
   } else {
-    debugger.logToSerial("Master card CANNOT be saved! Card count = ");
+    debugger.logToSerial("Master card CANNOT be saved! Card count = " + String(cards_size));
   }
-  debugger.logToSerial("" + cards_size);
 }
 
 void rfidInit() {
@@ -166,15 +138,18 @@ void loop() {
     return;
   }
 
-  // preferences.begin(WORKSPACE_NAME, false);
   String cardId = cardIdRead();
 
   if(isMasterCard(cardId)) {
-    int status = processCard();
+    if(cards_size <= maxCards) {
+      int status = processCard();
     
-    debugger.logToSerial("Debugger => processCard() - status: " + status);
-
-    addNewCardIndicator(status);
+      debugger.logToSerial("Debugger => processCard() - status: " + String(status));
+    
+      addNewCardIndicator(status);
+    } else {
+      debugger.logToSerial("Cards array reaches all capacity of " + String(maxCards) + ". Remove a card to add more.");
+    }
   } else {
     debugger.logToSerial("Debugger => loop() - Cards id: " + cardId);
 
@@ -196,7 +171,6 @@ void loop() {
   showCardsInMemory();
 
   mfrc522.PICC_HaltA(); 
-  // preferences.end();
 
   debugger.logToSerial("RFID sensor is ready to read a card!");
 
@@ -223,13 +197,14 @@ void addNewCardIndicator(int status) {
     debugger.logToSerial("Failed: Backend side error!");
     ledIndicator.indicate(ledIndicator.indicatorType.BACKEND_ERROR);
   } else {
-    debugger.logToSerial("Error: Cannot have status code: " + status);
+    debugger.logToSerial("Error: Cannot have status code: " + String(status));
   }
 }
 
 void showCardsInMemory() {
   debugger.logToSerial("-------------------------------");
-  debugger.logToSerial("Cards in memory (Including Master Card): " + cards_size);
+  debugger.logToSerial("Cards in memory (Including Master Card): " + String(cards_size));
+  // debugger.logToSerial("Sizeof cards = : " + sizeof(cards));
   debugger.logToSerial("-------------------------------");
 }
 
@@ -261,18 +236,18 @@ bool isCardAllowed(CardsInfoObject cardParam) {
   debugger.logToSerial("isCardAllowed -> cardID param = " + cardParam.cardID);
   
   for(CardsInfoObject card : cards) {
-    debugger.logToSerial("isCardAllowed -> from cards array = " + card.cardID);
+    if(!card.cardID.equalsIgnoreCase("")) {
+      debugger.logToSerial("isCardAllowed -> from cards array = " + card.cardID);
+    }
 
     if(card.cardID == cardParam.cardID) { // save master card only if it not exists previously 
       return true;
     }
   }
   return false;
-  // return cards. preferences.isKey(cardId.c_str());
 }
 
 bool isCardAlreadyExists(CardsInfoObject card) {
-  // return preferences.isKey(cardId.c_str());
   return isCardAllowed(card);
 }
 
@@ -283,7 +258,6 @@ bool isMasterCard(String cardId) {
 void waitForCard(Indicator::type indicatorType) {
   while(!isCardPresent()) {
     ledIndicator.indicate(indicatorType);
-    // ledIndicator.indicate(indicator.indicatorType.WAITING_CARD);
   }
 }
 
@@ -309,14 +283,12 @@ int processCard() {
 
   // add card only if the card do not already exists
   int status = addNewCard(cardId);
-  debugger.logToSerial("processCard method -> addNewCard status = " + status);
+  debugger.logToSerial("processCard method -> addNewCard status = " + String(status));
 
   return status;
 }
 
 int removeCard() {
-  // int cardCount = preferences.getUInt("cardsCount");
-
   debugger.logToSerial("Scan the card that you want to remove...");
 
   waitForCard(ledIndicator.indicatorType.CARD_REMOVED);
@@ -345,36 +317,27 @@ int removeCard() {
 void removeCard(CardsInfoObject card) {
   debugger.logToSerial("Cards BEFORE removing");
   logCards();
-
+  
   for(size_t i = 0; i < cards_size; i++) {
     if(cards[i].cardID == card.cardID) {
-      // EEPROM.put(cardsCountAddress, (cardsCounter-1));
-
       debugger.logToSerial("Card to be removed. Card id = " + card.cardID);
       
       removeCardFromArray(i);
+
       break;
     }
   }
+  debugger.logToSerial("Cards AFTER removing");
   logCards();
 }
 
 int addNewCard(String cardId) {
-  // int cardCount = preferences.getUInt("cardsCount");
-  // int newCardCount = cardCount + 1;
-
-  // String cardName = "Card " + String(newCardCount);
-
-  // preferences.putString(cardId.c_str(), cardName.c_str());
-  // preferences.putUInt("cardsCount", newCardCount);
-
-  // CardsInfoObject card = getCardById(cardId);
-
   CardsInfoObject newCard;
   newCard.cardID = cardId;
 
   debugger.logToSerial("addNewCard - card = " + newCard.cardID);
-  debugger.logToSerial("is card master? " + newCard.isMaster ? "Yes" : "No");
+  String isMasterStr = newCard.isMaster ? "Yes" : "No";
+  debugger.logToSerial("is card master? " + isMasterStr);
 
   bool isCardSaved = saveCard(newCard);
 
