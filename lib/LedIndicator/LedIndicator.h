@@ -111,7 +111,7 @@ void LedIndicator::enterAddCardLedIndicator()
 {
   ledGreenTurnON(400);
   ledsTurnOFF(400);
-  ledRedTurnON(400);
+  ledOrangeTurnON(400);
   ledsTurnOFF(0);
 }
 
