@@ -12,7 +12,7 @@ MFRC522 mfrc522(SS_PIN, RST_PIN);
 
 // LED and debugger setup
 LedIndicator ledIndicator(LED_GREEN, LED_RED);
-Debugger debugger(true);
+Debugger debugger(false);
 
 // Card storage configuration
 const uint8_t maxCards = 16;
@@ -63,7 +63,6 @@ void addNewCardIndicator(int status);
 void setup() {
   // Initialize debugger and serial communication
   debugger.init();
-  debugger.logToSerial("Serial initializing");
   
   // Initialize hardware pins
   pinMode(LED_RED, OUTPUT);
@@ -201,7 +200,7 @@ void removeCardFromArray(int index) {
   }
   
   // Shift all elements after the removed one
-  for (size_t i = index; i < cards_size - 1; i++) {
+  for (uint8_t i = index; i < cards_size - 1; i++) {
     cards[i] = cards[i+1];
   }
   
