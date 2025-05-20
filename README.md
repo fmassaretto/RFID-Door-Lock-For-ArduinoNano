@@ -1,6 +1,7 @@
-<<<<<<< HEAD
-# door-access-control-rfid
+# RFID Door lock for Arduino Nano (With EEPROM)
 
+<img src="circuit_image.png" alt="https://app.cirkitdesigner.com/project/eb1f5c40-906d-4f1b-80f4-7dbda37523d4"/>
+<p>Suggestion of circuit</p>
 
 
 ## How to add or remove a card
@@ -32,7 +33,3 @@ _At this point you have two options to add and to remove a card_
 2. If a card exists, the card will be removed and LED indicator will:
  - LED Red turn on for 800ms
  - LED Red blink on and off 100ms each time (3 times)
-   
-=======
-# Door_Opener_RFID
->>>>>>> 3f465190eeeeb83a80039502a160af160a6940f2
