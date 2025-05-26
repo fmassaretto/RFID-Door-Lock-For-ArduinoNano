@@ -14,6 +14,7 @@ public:
   bool _isDebuggerEnable();
   void init();
   void logToSerial(String msg);
+  void logToSerialLn(String msg);
 };
 
 #endif
