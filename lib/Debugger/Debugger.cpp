@@ -17,6 +17,12 @@ bool Debugger::_isDebuggerEnable() {
 
 void Debugger::logToSerial(String msg) {
     if(debugger_enable) {
+        Serial.print(msg);
+    }
+}
+
+void Debugger::logToSerialLn(String msg) {
+    if(debugger_enable) {
         Serial.println(msg);
     }
 }
