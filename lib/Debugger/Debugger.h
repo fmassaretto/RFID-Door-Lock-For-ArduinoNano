@@ -13,8 +13,16 @@ public:
   Debugger(bool enable);
   bool _isDebuggerEnable();
   void init();
-  void logToSerial(String msg);
-  void logToSerialLn(String msg);
+
+  void logToSerial(int msg);
+  void logToSerial(uint8_t msg);
+  void logToSerial(const char* msg);
+  void logToSerial(const __FlashStringHelper* msg);
+
+  void logToSerialLn(int msg);
+  void logToSerialLn(uint8_t msg);
+  void logToSerialLn(const char* msg);
+  void logToSerialLn(const __FlashStringHelper* msg);
 };
 
 #endif
