@@ -15,13 +15,51 @@ bool Debugger::_isDebuggerEnable() {
     return debugger_enable;
 }
 
-void Debugger::logToSerial(String msg) {
+void Debugger::logToSerial(int msg) {
     if(debugger_enable) {
         Serial.print(msg);
     }
 }
 
-void Debugger::logToSerialLn(String msg) {
+void Debugger::logToSerial(uint8_t msg) {
+    if(debugger_enable) {
+        Serial.print(msg);
+    }
+}
+
+void Debugger::logToSerial(const char* msg) {
+    if(debugger_enable) {
+        Serial.print(msg);
+    }
+}
+
+void Debugger::logToSerial(const __FlashStringHelper* msg) {
+    if(debugger_enable) {
+        Serial.print(msg);
+    }
+}
+
+
+
+void Debugger::logToSerialLn(int msg) {
+    if(debugger_enable) {
+        Serial.println(msg);
+    }
+}
+
+void Debugger::logToSerialLn(uint8_t msg) {
+    if(debugger_enable) {
+        Serial.println(msg);
+    }
+}
+
+void Debugger::logToSerialLn(const char* msg) {
+    if(debugger_enable) {
+        Serial.println(msg);
+    }
+}
+
+void Debugger::logToSerialLn(const __FlashStringHelper* msg) {
     if(debugger_enable) {
         Serial.println(msg);
     }

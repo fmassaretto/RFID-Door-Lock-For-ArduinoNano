@@ -1,3 +1,6 @@
+#include <Arduino.h>
+#include "../PinoutsBoards/ArduinoNanoPinouts.h"  // You can choose pinouts definition for your board
+
 struct Indicator
 {
   enum type
@@ -9,6 +12,7 @@ struct Indicator
     CARD_DOES_NOT_EXIST,
     CARD_ADDED_SUCCESS,
     CARD_REMOVED,
+    CARD_CANNOT_BE_REMOVED,
     SUCCESS_TAP,
     FAILED_TAP,
     BACKEND_ERROR
@@ -28,6 +32,7 @@ private:
   void cardDoesNotExistLedIndicator();
   void cardAddedSuccessLedIndicator();
   void cardRemovedLedIndicator();
+  void cardCannotBeRemovedLedIndicator();
   void cardIsAllowedLedIndicator();
   void cardIsNotAllowedLedIndicator();
   void backendErrorLedIndicator();
@@ -35,8 +40,8 @@ private:
   void ledRedTurnON(int delayTime);
   void ledOrangeTurnON(int delayTime);
   void ledsTurnOFF(int delayTime);
-
-public:
+  
+  public:
   void indicate(Indicator::type type);
   Indicator indicatorType;
 
@@ -76,6 +81,9 @@ void LedIndicator::indicatorFactory(Indicator::type type)
     break;
   case Indicator::CARD_REMOVED:
     cardRemovedLedIndicator();
+    break;
+  case Indicator::CARD_CANNOT_BE_REMOVED:
+    cardCannotBeRemovedLedIndicator();
     break;
   case Indicator::SUCCESS_TAP:
     cardIsAllowedLedIndicator();
@@ -193,11 +201,23 @@ void LedIndicator::cardIsNotAllowedLedIndicator()
 // Normal Operation
 
 // Non Normal Operation
+void LedIndicator::cardCannotBeRemovedLedIndicator()
+{
+  ledRedTurnON(600);
+  ledsTurnOFF(0);
+  ledRedTurnON(600);
+  ledsTurnOFF(0);
+  ledRedTurnON(600);
+  ledsTurnOFF(0);
+  ledRedTurnON(600);
+  ledsTurnOFF(0);
+}
+
 void LedIndicator::backendErrorLedIndicator()
 {
   ledRedTurnON(1400);
   ledsTurnOFF(0);
-  ledGreenTurnON(600);
+  ledOrangeTurnON(1400);
   ledsTurnOFF(0);
 }
 // Non Normal Operation
