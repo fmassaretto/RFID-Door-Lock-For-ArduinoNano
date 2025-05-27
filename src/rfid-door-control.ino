@@ -7,7 +7,7 @@
 #include "../lib/LedIndicator/LedIndicator.h"
 #include "../lib/PinoutsBoards/ArduinoNanoPinouts.h"  // You can choose pinouts definition for your board
 
-bool isDebugEnabled = true;
+bool isDebugEnabled = false;
 bool clearCardsInEEPROMExceptMaster = false;
 
 // RFID reader setup
@@ -51,6 +51,7 @@ void saveCardsToEEPROM();
 void loadCardsFromEEPROM();
 void printCardInfo();
 bool saveCard(const CardsInfoObject& card); // Pass by const reference
+bool processSavingCard(const CardsInfoObject& card);
 void removeCardFromArray(int index);
 void logCards();
 void logMasterCardSave(bool isCardSaved);
@@ -58,13 +59,12 @@ void rfidInit();
 bool isCardPresent();
 void cardIdRead(char* buffer, size_t bufferSize); // Reads ID into buffer
 bool isCardAllowed(const char* cardId);
+bool cardsMatches(const char* cardIdOne, const char* cardIdTwo);
 bool isMasterCard(const char* cardId);
 bool waitForCard(Indicator::type indicatorType, unsigned long startTime);
 int processCard();
-// int removeCard(); // Mode trigger
 int removeCard(const char* cardId); // Action function
 int processRemoveCard();
-void processAddCard();
 bool processWaitingForCard(Indicator::type ledIndicatorType);
 int addNewCard(const char* cardId);
 CardsInfoObject getCardById(const char* cardId);
@@ -216,6 +216,19 @@ void cardIdRead(char* buffer, size_t bufferSize) {
 // Card Management Functions
 // ------------------------
 
+bool processSavingCard(const CardsInfoObject& card) {
+  bool isCardSaved = saveCard(card);
+
+  if(isCardSaved) {
+    // Save to EEPROM
+    saveCardsToEEPROM();
+  }
+
+  printCardInfo();
+
+  return isCardSaved;
+}
+
 // Saves the provided card info (passed by reference) to the array and EEPROM.
 bool saveCard(const CardsInfoObject& card) {
   debugger.logToSerial(F("Saving card: "));
@@ -227,12 +240,7 @@ bool saveCard(const CardsInfoObject& card) {
     cards[cards_size] = card; // Struct assignment copies members
     cards_size++;
 
-    // Save to EEPROM
-    saveCardsToEEPROM();
-
     debugger.logToSerialLn(F("Card saved successfully"));
-    debugger.logToSerialLn(F("Cards after saving:"));
-    printCardInfo();
 
     return true;
   }
@@ -254,7 +262,7 @@ bool removeCardFromArray(const char* cardId) {
     debugger.logToSerial(F(" with cardId tapped = "));
     debugger.logToSerialLn(cardId);
     
-    if(strcmp(cards[i].cardID, cardId) == 0){
+    if(cardsMatches(cards[i].cardID, cardId)){
       index = i;
       break;
     }
@@ -285,50 +293,29 @@ bool removeCardFromArray(const char* cardId) {
   return true;
 }
 
-// // Logs all cards currently stored in the 'cards' array.
-// void logCards() {
-//   debugger.logToSerialLn(F("Current cards in memory:"));
-//   for (uint8_t i = 0; i < cards_size; i++) {
-//     // Check if C-string is not empty
-//     if (strlen(cards[i].cardID) > 0) {
-//       debugger.logToSerial(String(i));
-//       debugger.logToSerial(F(": "));
-//       debugger.logToSerial(cards[i].cardID);
-//       if (cards[i].isMaster) {
-//         debugger.logToSerialLn(F(" (Master)"));
-//       } else {
-//          // Assuming logToSerial adds a newline, otherwise add one here
-//          debugger.logToSerialLn(F(""));
-//       }
-//     }
-//   }
-// }
-
 // Checks if the given card ID exists in the 'cards' array.
 bool isCardAllowed(const char* cardId) {
   debugger.logToSerial(F("Checking if card is allowed: "));
   debugger.logToSerialLn(cardId);
 
-  for (uint8_t i = 0; i < cards_size; i++) {
-    // Use strcmp for C-string comparison (returns 0 if equal)
-    if (strcmp(cards[i].cardID, cardId) == 0) {
-      return true;
-    }
-  }
-  return false;
+  return cardsMatches(getCardById(cardId).cardID, cardId);
+}
+
+bool cardsMatches(const char* cardIdOne, const char* cardIdTwo) {
+  return strcmp(cardIdOne, cardIdTwo) == 0;
 }
 
 // Checks if the given card ID matches the MASTER_CARD_ID.
 bool isMasterCard(const char* cardId) {
   // Assumes MASTER_CARD_ID is defined in EnvVariables.h as a const char*
   // e.g., const char* MASTER_CARD_ID = "1A2B3C4D"; (Use uppercase hex)
-  return strcmp(cardId, MASTER_CARD_ID) == 0;
+  return cardsMatches(cardId, MASTER_CARD_ID);
 }
 
 // Finds a card by ID and returns its struct. Returns an empty card if not found.
 CardsInfoObject getCardById(const char* cardId) {
   for (uint8_t i = 0; i < cards_size; i++) {
-    if (strcmp(cards[i].cardID, cardId) == 0) {
+    if (cardsMatches(cards[i].cardID, cardId)) {
       return cards[i];
     }
   }
@@ -343,15 +330,8 @@ CardsInfoObject getCardById(const char* cardId) {
 
 // Ensures the MASTER_CARD_ID is present in the 'cards' array.
 void saveMasterCardToMemory() {
-  bool masterCardAlreadyExists = false;
-
   // Check if master card already exists
-  for (uint8_t i = 0; i < cards_size; i++) {
-    if (strcmp(cards[i].cardID, MASTER_CARD_ID) == 0) {
-      masterCardAlreadyExists = true;
-      break;
-    }
-  }
+  bool masterCardAlreadyExists = isCardAllowed(MASTER_CARD_ID);
 
   // Add master card if it doesn't exist
   if (!masterCardAlreadyExists) {
@@ -362,22 +342,10 @@ void saveMasterCardToMemory() {
     masterCard.cardID[CARD_ID_LENGTH] = '\0'; // Ensure null termination
     masterCard.isMaster = true;
 
-    bool isCardSaved = saveCard(masterCard); // Pass the struct
-    logMasterCardSave(isCardSaved);
+    processSavingCard(masterCard);
   } else {
      debugger.logToSerialLn(F("Master card already exists in memory."));
   }
-}
-
-// Logs whether the master card save attempt was successful.
-void logMasterCardSave(bool isCardSaved) {
-  if (isCardSaved) {
-    debugger.logToSerial(F("Master card saved! "));
-  } else {
-    debugger.logToSerial(F("Master card CANNOT be saved! "));
-  }
-  debugger.logToSerial(F("Card count = "));
-  debugger.logToSerialLn(cards_size);
 }
 
 bool processWaitingForCard(Indicator::type ledIndicatorType) {
@@ -542,8 +510,7 @@ int addNewCard(const char* cardId) {
   debugger.logToSerial(F("Adding new card (final ID): "));
   debugger.logToSerialLn(newCard.cardID);
 
-  bool isCardSaved = saveCard(newCard); // Pass the struct
-  return isCardSaved ? 200 : 500; // 200 OK or 500 Internal Error
+  return processSavingCard(newCard) ? 200 : 500; // 200 OK or 500 Internal Error
 }
 
 // UI Feedback Functions
