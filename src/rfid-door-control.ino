@@ -2,13 +2,12 @@
 #include <EEPROM.h>
 #include <SPI.h>
 #include <MFRC522.h>
-#include <string.h> // Added for C-string functions
 #include "../EnvVariables.h" // Ensure MASTER_CARD_ID is defined here as: const char* MASTER_CARD_ID = "YOUR_HEX_ID";
 #include "../lib/Debugger/Debugger.h"
 #include "../lib/LedIndicator/LedIndicator.h"
 #include "../lib/PinoutsBoards/ArduinoNanoPinouts.h"  // You can choose pinouts definition for your board
 
-bool isDebugEnabled = false;
+bool isDebugEnabled = true;
 bool clearCardsInEEPROMExceptMaster = false;
 
 // RFID reader setup
@@ -60,92 +59,20 @@ bool isCardPresent();
 void cardIdRead(char* buffer, size_t bufferSize); // Reads ID into buffer
 bool isCardAllowed(const char* cardId);
 bool isMasterCard(const char* cardId);
-bool waitForCard(Indicator::type indicatorType);
+bool waitForCard(Indicator::type indicatorType, unsigned long startTime);
 int processCard();
-int removeCard(); // Mode trigger
-void removeCard(const char* cardId); // Action function
+// int removeCard(); // Mode trigger
+int removeCard(const char* cardId); // Action function
+int processRemoveCard();
+void processAddCard();
+bool processWaitingForCard(Indicator::type ledIndicatorType);
 int addNewCard(const char* cardId);
 CardsInfoObject getCardById(const char* cardId);
 void openTheDoor();
 void keepDoorClosed();
 void saveMasterCardToMemory();
 void showCardsInMemory();
-void addNewCardIndicator(int status);
-void clearAllNonMasterCards();
-
-// JUST FOR CLEAN UP THE EPPROM
-// Cleans up specific garbage/invalid cards from the 'cards' array and EEPROM.
-void cleanupGarbageCards() {
-  debugger.logToSerial(F("Starting garbage card cleanup process..."));
-  bool changesMade = false;
-  const char* zeroSuffix = "000000";
-  size_t zeroSuffixLen = strlen(zeroSuffix);
-
-  // Iterate backwards through the array for safe removal.
-  for (int i = cards_size - 1; i >= 0; i--) {
-    bool removeThisCard = false;
-    const char* currentId = cards[i].cardID;
-    size_t currentIdLen = strlen(currentId);
-
-    // Condition 1: Check if it's the master card - NEVER remove master card.
-    if (isMasterCard(currentId)) {
-      debugger.logToSerial(F("Skipping cleanup check for master card at index "));
-      debugger.logToSerial(String(i));
-      debugger.logToSerial(F(": '"));
-      debugger.logToSerial(currentId);
-      debugger.logToSerial(F("'."));
-      continue; // Skip to the next card
-    }
-
-    // Condition 2: Check for zero suffix "000000".
-    if (currentIdLen >= zeroSuffixLen && strcmp(currentId + currentIdLen - zeroSuffixLen, zeroSuffix) == 0) {
-      debugger.logToSerial(F("Card at index "));
-      debugger.logToSerial(String(i));
-      debugger.logToSerial(F(" ('"));
-      debugger.logToSerial(currentId);
-      debugger.logToSerial(F("') ends with '000000'. Marking for removal."));
-      removeThisCard = true;
-    }
-
-    // Condition 3: Check for invalid hexadecimal characters.
-    // This also implicitly handles empty strings or strings with non-printable chars.
-    if (!removeThisCard) { // Only check if not already marked by suffix rule
-        bool containsInvalidChar = false;
-        for (size_t j = 0; j < currentIdLen; j++) {
-            // isxdigit checks for 0-9, a-f, A-F
-            if (!isxdigit(currentId[j])) {
-                containsInvalidChar = true;
-                break;
-            }
-        }
-        if (containsInvalidChar || currentIdLen == 0) { // Also remove empty IDs
-            debugger.logToSerial(F("Card at index "));
-            debugger.logToSerial(String(i));
-            debugger.logToSerial(F(" ('"));
-            debugger.logToSerial(currentId);
-            debugger.logToSerial(F("') contains invalid characters or is empty. Marking for removal."));
-            removeThisCard = true;
-        }
-    }
-
-    // Perform removal if marked
-    if (removeThisCard) {
-      removeCardFromArray(i);
-      changesMade = true;
-    }
-  }
-
-  if (changesMade) {
-      debugger.logToSerial(F("Finalizing EEPROM state after garbage cleanup."));
-      // removeCardFromArray already saves EEPROM, so this might be redundant
-      // saveCardsToEEPROM();
-  } else {
-      debugger.logToSerial(F("No garbage cards found matching criteria."));
-  }
-
-  debugger.logToSerial(F("Finished garbage cleanup. Current count: "));
-  debugger.logToSerial(String(cards_size));
-} // TODO: remove it after
+void cardStatusLedIndicator(int status);
 
 void setup() {
   // Initialize debugger and serial communication
@@ -168,17 +95,15 @@ void setup() {
   debugger.logToSerialLn(F("Loaded cards:"));
   printCardInfo();
   debugger.logToSerial(F("Cards count = "));
-  debugger.logToSerialLn(String(cards_size));
+  debugger.logToSerialLn(cards_size);
 
   // Ensure master card exists in memory
   saveMasterCardToMemory();
 
 
   if(clearCardsInEEPROMExceptMaster) {
-    clearAllNonMasterCards();
+    // clearAllNonMasterCards();
   }
-
-  // cleanupGarbageCards(); //TODO: Remove it
 
   // Initialize RFID reader
   rfidInit();
@@ -210,19 +135,20 @@ void loop() {
   if (isMasterCard(currentCardId)) {
     // Master card - enter admin mode
     int status = processCard(); // processCard handles its own card reading for add/remove
+    cardStatusLedIndicator(status);
+
     debugger.logToSerial(F("Debugger => processCard() - status: "));
-    debugger.logToSerialLn(String(status));
-    addNewCardIndicator(status);
+    debugger.logToSerialLn(status);
   } else {
     // Regular card - check if it's allowed
     debugger.logToSerial(F("Debugger => loop() - Checking Card ID: "));
     debugger.logToSerialLn(currentCardId);
 
     if (isCardAllowed(currentCardId)) {
-      ledIndicator.indicate(ledIndicator.indicatorType.SUCCESS_TAP);
+      ledIndicator.indicate(Indicator::SUCCESS_TAP);
       openTheDoor();
     } else {
-      ledIndicator.indicate(ledIndicator.indicatorType.FAILED_TAP);
+      ledIndicator.indicate(Indicator::FAILED_TAP);
     }
   }
 
@@ -316,12 +242,29 @@ bool saveCard(const CardsInfoObject& card) {
 }
 
 // Removes a card from the array at the specified index and updates EEPROM.
-void removeCardFromArray(int index) {
+bool removeCardFromArray(const char* cardId) {
+  int index = -1;
+
+  // Finding the index in array for the cardId passed
+  for (uint8_t i = 0; i < cards_size; i++) {
+    debugger.logToSerial(F("Removing card -> Comparing card id = "));
+    debugger.logToSerial(cards[i].cardID);
+    debugger.logToSerial(F(" index = "));
+    debugger.logToSerial(i);
+    debugger.logToSerial(F(" with cardId tapped = "));
+    debugger.logToSerialLn(cardId);
+    
+    if(strcmp(cards[i].cardID, cardId) == 0){
+      index = i;
+      break;
+    }
+  }
+
   // Validate index
   if (index < 0 || index >= cards_size) {
     debugger.logToSerial(F("Invalid index for card removal: "));
-    debugger.logToSerialLn(String(index));
-    return;
+    debugger.logToSerialLn(index);
+    return false;
   }
 
   // Shift all elements after the removed one (struct assignment works)
@@ -334,33 +277,32 @@ void removeCardFromArray(int index) {
   cards[cards_size - 1].isMaster = false;
   cards_size--;
 
-  // Save changes to EEPROM
-  saveCardsToEEPROM();
-
   debugger.logToSerial(F("Card removed at index: "));
-  debugger.logToSerial(String(index));
+  debugger.logToSerial(index);
   debugger.logToSerial(F(", new size: "));
-  debugger.logToSerialLn(String(cards_size));
+  debugger.logToSerialLn(cards_size);
+
+  return true;
 }
 
-// Logs all cards currently stored in the 'cards' array.
-void logCards() {
-  debugger.logToSerialLn(F("Current cards in memory:"));
-  for (uint8_t i = 0; i < cards_size; i++) {
-    // Check if C-string is not empty
-    if (strlen(cards[i].cardID) > 0) {
-      debugger.logToSerial(String(i));
-      debugger.logToSerial(F(": "));
-      debugger.logToSerial(cards[i].cardID);
-      if (cards[i].isMaster) {
-        debugger.logToSerialLn(F(" (Master)"));
-      } else {
-         // Assuming logToSerial adds a newline, otherwise add one here
-         debugger.logToSerialLn(F(""));
-      }
-    }
-  }
-}
+// // Logs all cards currently stored in the 'cards' array.
+// void logCards() {
+//   debugger.logToSerialLn(F("Current cards in memory:"));
+//   for (uint8_t i = 0; i < cards_size; i++) {
+//     // Check if C-string is not empty
+//     if (strlen(cards[i].cardID) > 0) {
+//       debugger.logToSerial(String(i));
+//       debugger.logToSerial(F(": "));
+//       debugger.logToSerial(cards[i].cardID);
+//       if (cards[i].isMaster) {
+//         debugger.logToSerialLn(F(" (Master)"));
+//       } else {
+//          // Assuming logToSerial adds a newline, otherwise add one here
+//          debugger.logToSerialLn(F(""));
+//       }
+//     }
+//   }
+// }
 
 // Checks if the given card ID exists in the 'cards' array.
 bool isCardAllowed(const char* cardId) {
@@ -430,32 +372,40 @@ void saveMasterCardToMemory() {
 // Logs whether the master card save attempt was successful.
 void logMasterCardSave(bool isCardSaved) {
   if (isCardSaved) {
-    debugger.logToSerial(F("Master card saved! Card count = "));
-    debugger.logToSerialLn(String(cards_size));
+    debugger.logToSerial(F("Master card saved! "));
   } else {
-    debugger.logToSerial(F("Master card CANNOT be saved! Card count = "));
-    debugger.logToSerialLn(String(cards_size));
+    debugger.logToSerial(F("Master card CANNOT be saved! "));
   }
+  debugger.logToSerial(F("Card count = "));
+  debugger.logToSerialLn(cards_size);
 }
 
-// Admin Mode Functions
-// -------------------
+bool processWaitingForCard(Indicator::type ledIndicatorType) {
+  unsigned long startTime = millis();
+  bool isWaitingForCard = false;
+
+  while(!isCardPresent()) {
+    isWaitingForCard = waitForCard(ledIndicatorType, startTime);
+
+    if(!isWaitingForCard) {
+      break;
+    }
+  }
+
+  return isWaitingForCard;
+}
 
 // Waits for a card to be presented, with a timeout.
-bool waitForCard(Indicator::type indicatorType) {
-  unsigned long startTime = millis();
+bool waitForCard(Indicator::type indicatorType, unsigned long startTime) {
+  ledIndicator.indicate(indicatorType);
 
-  while (!isCardPresent()) {
-    ledIndicator.indicate(indicatorType);
-
-    // Check for timeout
-    if (millis() - startTime > CARD_WAIT_TIMEOUT) {
-      debugger.logToSerialLn(F("Card wait timeout"));
-      ledIndicator.indicate(ledIndicator.indicatorType.BACKEND_ERROR); // Indicate timeout
-      return false;
-    }
-    delay(50); // Small delay to prevent busy-waiting too aggressively
+  // Check for timeout
+  if (millis() - startTime > CARD_WAIT_TIMEOUT) {
+    debugger.logToSerialLn(F("Card wait timeout"));
+    ledIndicator.indicate(Indicator::BACKEND_ERROR); // Indicate timeout
+    return false;
   }
+  delay(50); // Small delay to prevent busy-waiting too aggressively
 
   return true;
 }
@@ -464,10 +414,10 @@ bool waitForCard(Indicator::type indicatorType) {
 int processCard() {
   debugger.logToSerialLn(F("Admin mode: Scan card to add or remove..."));
 
-  ledIndicator.indicate(ledIndicator.indicatorType.ENTER_NEW_CARD_CONDITION);
+  ledIndicator.indicate(Indicator::ENTER_NEW_CARD_CONDITION);
 
   // Wait for the *first* card tap in admin mode
-  if (!waitForCard(ledIndicator.indicatorType.WAITING_CARD)) {
+  if (!processWaitingForCard(Indicator::WAITING_CARD)) {
     return 500; // Timeout error
   }
 
@@ -479,6 +429,7 @@ int processCard() {
       debugger.logToSerialLn(F("Error reading card ID in processCard"));
       return 500; // Error reading card
   }
+
   debugger.logToSerial(F("Admin mode - Card 1 read: "));
   debugger.logToSerialLn(cardId);
 
@@ -489,7 +440,7 @@ int processCard() {
   if (isMasterCard(cardId)) {
     // Master card tapped again, enter removal mode
     // The removeCard() function will wait for the *next* card tap
-    return removeCard();
+    return processRemoveCard();
   }
 
   // If it wasn't the master card, proceed to check if it can be added
@@ -504,7 +455,7 @@ int processCard() {
   // Check if we have space for a new card
   if (cards_size >= maxCards) {
     debugger.logToSerial(F("Cards array full ("));
-    debugger.logToSerial(String(maxCards));
+    debugger.logToSerial(maxCards);
     debugger.logToSerialLn(F(" cards). Remove a card to add more."));
     return 500; // Internal error - no space
   }
@@ -514,11 +465,11 @@ int processCard() {
 }
 
 // Handles the admin process of removing a card.
-int removeCard() { // This is the mode trigger, waits for the card TO remove
+int processRemoveCard() { // This is the mode trigger, waits for the card TO remove
   debugger.logToSerialLn(F("Admin mode: Scan card TO REMOVE..."));
 
   // Wait for the *second* card tap (the one to be removed)
-  if (!waitForCard(ledIndicator.indicatorType.CARD_REMOVED)) { // Indicator name might be confusing
+  if (!processWaitingForCard(Indicator::CARD_REMOVED)) { // Indicator name might be confusing
     return 500; // Timeout error
   }
 
@@ -553,33 +504,31 @@ int removeCard() { // This is the mode trigger, waits for the card TO remove
   }
 
   // Remove the card (call the overloaded version)
-  removeCard(cardIdToRemove);
-  return 202; // Accepted - card removed
+  int status = removeCard(cardIdToRemove);
+
+  debugger.logToSerial(F("Attempt to remove card: "));
+  debugger.logToSerial(cardIdToRemove);
+  debugger.logToSerial(F(" with status: "));
+  debugger.logToSerialLn(status);
+
+  return status;
 }
 
-// Removes the specified card ID from the array and EEPROM.
-void removeCard(const char* cardId) {
-  debugger.logToSerialLn(F("Cards BEFORE removing"));
-  logCards();
+int removeCard(const char* cardId) {
+  debugger.logToSerial(F("Removing card: "));
+  debugger.logToSerialLn(cardId);
 
-  bool removed = false;
-  for (uint8_t i = 0; i < cards_size; i++) {
-    if (strcmp(cards[i].cardID, cardId) == 0) {
-      debugger.logToSerial(F("Removing card: "));
-      debugger.logToSerialLn(cardId);
-      removeCardFromArray(i);
-      removed = true;
-      break; // Assume IDs are unique, stop after finding
-    }
+  bool isCardRemoved = removeCardFromArray(cardId);
+
+  if(!isCardRemoved) {
+    debugger.logToSerialLn(F("Card cannot be removed from array!"));
+    return 404;
   }
 
-  if(removed){
-      debugger.logToSerialLn(F("Cards AFTER removing"));
-      logCards();
-  } else {
-      debugger.logToSerial(F("Card not found during removal process (should not happen here): "));
-      debugger.logToSerialLn(cardId);
-  }
+  // Save changes to EEPROM
+  saveCardsToEEPROM();
+
+  return 202;  // Accepted - card removed
 }
 
 // Adds a new card with the given ID.
@@ -601,36 +550,40 @@ int addNewCard(const char* cardId) {
 // --------------------
 
 // Provides LED feedback based on the status code from admin operations.
-void addNewCardIndicator(int status) {
+void cardStatusLedIndicator(int status) {
   switch (status) {
     case 200:
-      debugger.logToSerialLn(F("Success: Card added!"));
-      ledIndicator.indicate(ledIndicator.indicatorType.CARD_ADDED_SUCCESS);
+      debugger.logToSerialLn(F("Led Indicator -> Success: Card added!"));
+      ledIndicator.indicate(Indicator::CARD_ADDED_SUCCESS);
       break;
     case 202:
-      debugger.logToSerialLn(F("Success: Card removed!"));
-      ledIndicator.indicate(ledIndicator.indicatorType.CARD_REMOVED);
+      debugger.logToSerialLn(F("Led Indicator -> Success: Card removed!"));
+      ledIndicator.indicate(Indicator::CARD_REMOVED);
       break;
     case 204:
-      debugger.logToSerialLn(F("Failed: Card does not exist!"));
-      ledIndicator.indicate(ledIndicator.indicatorType.CARD_DOES_NOT_EXIST);
-      break;
-    case 409:
-      debugger.logToSerialLn(F("Failed: Card already exists!"));
-      ledIndicator.indicate(ledIndicator.indicatorType.CARD_ALREADY_EXISTS);
+      debugger.logToSerialLn(F("Led Indicator -> Failed: Card does not exist!"));
+      ledIndicator.indicate(Indicator::CARD_DOES_NOT_EXIST);
       break;
     case 400:
-      debugger.logToSerialLn(F("Failed: Master card cannot be removed!"));
-      ledIndicator.indicate(ledIndicator.indicatorType.MASTER_CARD_NOT_PERMITTED);
+      debugger.logToSerialLn(F("Led Indicator -> Failed: Master card cannot be removed!"));
+      ledIndicator.indicate(Indicator::MASTER_CARD_NOT_PERMITTED);
+      break;
+    case 404:
+      debugger.logToSerialLn(F("Led Indicator -> Failed: Card cannot be removed!"));
+      ledIndicator.indicate(Indicator::CARD_CANNOT_BE_REMOVED);
+      break;
+    case 409:
+      debugger.logToSerialLn(F("Led Indicator -> Failed: Card already exists!"));
+      ledIndicator.indicate(Indicator::CARD_ALREADY_EXISTS);
       break;
     case 500:
-      debugger.logToSerialLn(F("Failed: System error or timeout!"));
-      ledIndicator.indicate(ledIndicator.indicatorType.BACKEND_ERROR);
+      debugger.logToSerialLn(F("Led Indicator -> Failed: System error or timeout!"));
+      ledIndicator.indicate(Indicator::BACKEND_ERROR);
       break;
     default:
-      debugger.logToSerial(F("Error: Unknown status code: "));
-      debugger.logToSerialLn(String(status));
-      ledIndicator.indicate(ledIndicator.indicatorType.BACKEND_ERROR);
+      debugger.logToSerial(F("Led Indicator -> Error: Unknown status code: "));
+      debugger.logToSerialLn(status);
+      ledIndicator.indicate(Indicator::BACKEND_ERROR);
       break;
   }
 }
@@ -639,9 +592,9 @@ void addNewCardIndicator(int status) {
 void showCardsInMemory() {
   debugger.logToSerialLn(F("-------------------------------"));
   debugger.logToSerial(F("Cards in memory: "));
-  debugger.logToSerial(String(cards_size));
+  debugger.logToSerial(cards_size);
   debugger.logToSerial(F("/"));
-  debugger.logToSerialLn(String(maxCards));
+  debugger.logToSerialLn(maxCards);
   debugger.logToSerialLn(F("-------------------------------"));
 }
 
@@ -677,7 +630,7 @@ void saveCardsToEEPROM() {
   int addr = EEPROM_DATA_START;
   for (uint8_t i = 0; i < cards_size; i++) {
     // Write card ID (fixed length CARD_ID_LENGTH)
-    for (int j = 0; j < CARD_ID_LENGTH; j++) {
+    for (uint8_t j = 0; j < CARD_ID_LENGTH; j++) {
       // Write character if it exists in the source string, otherwise write null terminator ('\\0')
       // This ensures exactly CARD_ID_LENGTH bytes are written for the ID field.
       if (j < strlen(cards[i].cardID)) {
@@ -766,16 +719,16 @@ void loadCardsFromEEPROM() {
   // Verify the loaded count matches the header count
   if (cards_size != countInEEPROM) {
       debugger.logToSerial(F("Warning: Loaded card count ("));
-      debugger.logToSerial(String(cards_size));
+      debugger.logToSerial(cards_size);
       debugger.logToSerial(F(") does not match EEPROM header count ("));
-      debugger.logToSerial(String(countInEEPROM));
+      debugger.logToSerial(countInEEPROM);
       debugger.logToSerialLn(F("). Using loaded count."));
       // Optionally, resave EEPROM to fix the count header
       // saveCardsToEEPROM();
   }
 
   debugger.logToSerial(F("Loaded "));
-  debugger.logToSerial(String(cards_size));
+  debugger.logToSerial(cards_size);
   debugger.logToSerialLn(F(" cards from EEPROM"));
 }
 
@@ -786,7 +739,7 @@ void printCardInfo() {
   for (uint8_t i = 0; i < cards_size; i++) {
     if (strlen(cards[i].cardID) > 0) { // Use strlen
       debugger.logToSerial(F("Card "));
-      debugger.logToSerial(String(i));
+      debugger.logToSerial(i);
       debugger.logToSerial(F(": ID="));
       debugger.logToSerial(cards[i].cardID);
       debugger.logToSerial(F(", Master="));
@@ -795,7 +748,7 @@ void printCardInfo() {
     } else {
       // This shouldn't happen if cards_size is managed correctly
       debugger.logToSerial(F("Card "));
-      debugger.logToSerial(String(i));
+      debugger.logToSerial(i);
       debugger.logToSerialLn(F(": Found empty slot within cards_size range!"));
     }
   }
@@ -804,52 +757,4 @@ void printCardInfo() {
     debugger.logToSerialLn(F("No cards stored"));
   }
    debugger.logToSerialLn(F("--- Card List End ---"));
-}
-
-// Clears all cards from the 'cards' array and EEPROM, except for the master card.
-void clearAllNonMasterCards() {
-  debugger.logToSerialLn(F("Starting process to clear all non-master cards..."));
-  bool changesMade = false;
-
-  // Iterate backwards through the array. This is important because removeCardFromArray
-  // shifts elements and changes cards_size. Iterating backwards ensures that
-  // removing an element doesn't affect the indices of the elements we still need to check.
-  for (int i = cards_size - 1; i >= 0; i--) {
-    // Check if the current card is the master card using the dedicated function.
-    if (!isMasterCard(cards[i].cardID)) {
-      debugger.logToSerial(F("Found non-master card at index "));
-      debugger.logToSerial(String(i));
-      debugger.logToSerial(F(", ID: "));
-      debugger.logToSerial(cards[i].cardID);
-      debugger.logToSerialLn(F(". Removing..."));
-
-      // Call the existing function to remove the card from the array.
-      // This function also handles decrementing cards_size and saving to EEPROM.
-      removeCardFromArray(i);
-      changesMade = true;
-    } else {
-      debugger.logToSerial(F("Keeping master card at index "));
-      debugger.logToSerial(String(i));
-      debugger.logToSerial(F(", ID: "));
-      debugger.logToSerialLn(cards[i].cardID);
-    }
-  }
-
-  // Although removeCardFromArray saves EEPROM on each removal, a final save
-  // ensures the correct count and version are written if multiple cards were removed,
-  // or if no cards were removed but we want to ensure consistency.
-  // However, since removeCardFromArray already calls saveCardsToEEPROM, this might be redundant
-  // unless removeCardFromArray is modified *not* to save individually.
-  // For safety and clarity, let's ensure the final state is saved.
-  if (changesMade) {
-      debugger.logToSerialLn(F("Finalizing EEPROM state after clearing non-master cards."));
-      saveCardsToEEPROM(); // Ensure final count and data are correct
-  } else {
-      debugger.logToSerialLn(F("No non-master cards found to remove."));
-  }
-
-  debugger.logToSerial(F("Finished clearing non-master cards. Current count: "));
-  debugger.logToSerial(String(cards_size));
-  debugger.logToSerialLn(F("Remaining cards:"));
-  printCardInfo(); // Print remaining cards for verification
 }
