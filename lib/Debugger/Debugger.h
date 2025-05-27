@@ -10,7 +10,7 @@ protected:
   bool debugger_enable;
 
 public:
-  Debugger(bool enable);
+  explicit Debugger(bool enable);
   bool _isDebuggerEnable();
   void init();
 
